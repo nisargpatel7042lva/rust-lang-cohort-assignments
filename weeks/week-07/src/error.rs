@@ -19,11 +19,7 @@ pub enum NodeError {
 }
 
 impl From<std::io::Error> for NodeError {
-    /// Convert socket and file IO errors into a stable node error.
     fn from(error: std::io::Error) -> Self {
-        // Steps:
-        // 1. Convert `error` into a string.
-        // 2. Store it in `NodeError::Io`.
-        todo!()
+        NodeError::Io(error.to_string())
     }
 }

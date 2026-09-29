@@ -27,56 +27,126 @@ pub enum NodeResponse {
 
 /// Parse a block in `<hash>|<previous_hash>|<height>|<payload>` format.
 pub fn parse_block(input: &str) -> Result<Block, NodeError> {
-    // Steps:
-    // 1. Split `input` into exactly four fields using `|`.
-    // 2. Trim each field.
-    // 3. Reject empty hash, previous hash, height, or payload.
-    // 4. Parse height as `u64`.
-    // 5. Return `NodeError::MalformedMessage` on malformed input.
-    todo!()
+    let fields: Vec<&str> = input.splitn(4, '|').collect();
+    if fields.len() != 4 {
+        return Err(NodeError::MalformedMessage);
+    }
+    let hash = fields[0].trim();
+    let previous_hash = fields[1].trim();
+    let height_str = fields[2].trim();
+    let payload = fields[3].trim();
+    if hash.is_empty() || previous_hash.is_empty() || height_str.is_empty() || payload.is_empty() {
+        return Err(NodeError::MalformedMessage);
+    }
+    let height: u64 = height_str
+        .parse()
+        .map_err(|_| NodeError::MalformedMessage)?;
+    Ok(Block::new(hash, previous_hash, height, payload))
 }
 
 /// Parse one text protocol request.
-///
-/// Supported commands:
-/// - `ping`
-/// - `height`
-/// - `get_tip`
-/// - `get_peers`
-/// - `get_block <hash>`
-/// - `add_peer <address>`
-/// - `submit_block <hash>|<previous_hash>|<height>|<payload>`
 pub fn parse_request(line: &str) -> Result<NodeRequest, NodeError> {
-    // Steps:
-    // 1. Trim trailing whitespace.
-    // 2. Match exact commands without arguments first.
-    // 3. For commands with arguments, split once on the first space.
-    // 4. Reject missing arguments with `MalformedMessage`.
-    // 5. Reject unknown commands with `UnknownCommand`.
-    todo!()
+    let trimmed = line.trim_end_matches('\n').trim();
+    match trimmed {
+        "ping" => return Ok(NodeRequest::Ping),
+        "height" => return Ok(NodeRequest::Height),
+        "get_tip" => return Ok(NodeRequest::GetTip),
+        "get_peers" => return Ok(NodeRequest::GetPeers),
+        _ => {}
+    }
+    if let Some(rest) = trimmed.strip_prefix("get_block ") {
+        let arg = rest.trim();
+        if arg.is_empty() {
+            return Err(NodeError::MalformedMessage);
+        }
+        return Ok(NodeRequest::GetBlock(arg.to_string()));
+    }
+    if trimmed == "get_block" {
+        return Err(NodeError::MalformedMessage);
+    }
+    if let Some(rest) = trimmed.strip_prefix("add_peer ") {
+        let arg = rest.trim();
+        if arg.is_empty() {
+            return Err(NodeError::MalformedMessage);
+        }
+        return Ok(NodeRequest::AddPeer(arg.to_string()));
+    }
+    if trimmed == "add_peer" {
+        return Err(NodeError::MalformedMessage);
+    }
+    if let Some(rest) = trimmed.strip_prefix("submit_block ") {
+        let arg = rest.trim();
+        if arg.is_empty() {
+            return Err(NodeError::MalformedMessage);
+        }
+        let block = parse_block(arg)?;
+        return Ok(NodeRequest::SubmitBlock(block));
+    }
+    if trimmed == "submit_block" {
+        return Err(NodeError::MalformedMessage);
+    }
+    Err(NodeError::UnknownCommand)
 }
 
 /// Encode a response as one newline-terminated protocol line.
 pub fn encode_response(response: &NodeResponse) -> String {
-    // Steps:
-    // 1. Match every response variant.
-    // 2. Return exactly one line ending in `\n`.
-    // 3. Use `block <wire_format>` for block responses.
-    // 4. Use comma-separated peer addresses for `Peers`.
-    todo!()
+    match response {
+        NodeResponse::Pong => "pong\n".to_string(),
+        NodeResponse::Height(h) => format!("height {h}\n"),
+        NodeResponse::Tip(hash) => format!("tip {hash}\n"),
+        NodeResponse::Accepted(hash) => format!("accepted {hash}\n"),
+        NodeResponse::Rejected(reason) => format!("rejected {reason}\n"),
+        NodeResponse::Block(block) => format!("block {}\n", block.wire_format()),
+        NodeResponse::NotFound => "not_found\n".to_string(),
+        NodeResponse::PeerAdded(count) => format!("peer_added {count}\n"),
+        NodeResponse::Peers(peers) => format!("peers {}\n", peers.join(",")),
+        NodeResponse::Error(msg) => format!("error {msg}\n"),
+    }
 }
 
 /// Parse a response produced by `encode_response`.
-///
-/// This is intentionally smaller than a real P2P decoder, but it forces students
-/// to handle both directions of a protocol boundary.
 pub fn parse_response(line: &str) -> Result<NodeResponse, NodeError> {
-    // Steps:
-    // 1. Trim the response line.
-    // 2. Parse `pong`, `not_found`, `height <n>`, `tip <hash>`,
-    //    `accepted <hash>`, `rejected <reason>`, `error <message>`,
-    //    `block <wire_block>`, and `peers <a,b,c>`.
-    // 3. Return `MalformedMessage` for malformed known responses.
-    // 4. Return `UnknownCommand` for unrecognized response prefixes.
-    todo!()
+    let trimmed = line.trim();
+    if trimmed == "pong" {
+        return Ok(NodeResponse::Pong);
+    }
+    if trimmed == "not_found" {
+        return Ok(NodeResponse::NotFound);
+    }
+    if let Some(rest) = trimmed.strip_prefix("height ") {
+        let n: u64 = rest
+            .trim()
+            .parse()
+            .map_err(|_| NodeError::MalformedMessage)?;
+        return Ok(NodeResponse::Height(n));
+    }
+    if let Some(rest) = trimmed.strip_prefix("tip ") {
+        return Ok(NodeResponse::Tip(rest.trim().to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("accepted ") {
+        return Ok(NodeResponse::Accepted(rest.trim().to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("rejected ") {
+        return Ok(NodeResponse::Rejected(rest.trim().to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("error ") {
+        return Ok(NodeResponse::Error(rest.trim().to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("block ") {
+        let block = parse_block(rest.trim())?;
+        return Ok(NodeResponse::Block(block));
+    }
+    if let Some(rest) = trimmed.strip_prefix("peers ") {
+        let peers: Vec<String> = rest
+            .trim()
+            .split(',')
+            .map(|s| s.to_string())
+            .collect();
+        return Ok(NodeResponse::Peers(peers));
+    }
+    // Check for known prefixes with malformed content
+    if trimmed.starts_with("height") || trimmed.starts_with("block") {
+        return Err(NodeError::MalformedMessage);
+    }
+    Err(NodeError::UnknownCommand)
 }

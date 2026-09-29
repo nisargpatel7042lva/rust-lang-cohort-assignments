@@ -9,11 +9,9 @@ pub async fn handle_line(
     sender: &mpsc::Sender<NodeCommand>,
     line: &str,
 ) -> Result<String, NodeError> {
-    // Steps:
-    // 1. Parse the line with `parse_request`.
-    // 2. Send the request with `send_request`.
-    // 3. Encode the response with `encode_response`.
-    todo!()
+    let request = parse_request(line)?;
+    let response = send_request(sender, request).await?;
+    Ok(encode_response(&response))
 }
 
 /// Handle one TCP connection line-by-line.
@@ -21,13 +19,22 @@ pub async fn handle_connection(
     stream: TcpStream,
     sender: mpsc::Sender<NodeCommand>,
 ) -> Result<(), NodeError> {
-    // Steps:
-    // 1. Split the stream into a reader and writer.
-    // 2. Read newline-delimited requests.
-    // 3. For each request, call `handle_line`.
-    // 4. Write the encoded response back to the socket.
-    // 5. For parse errors, write an encoded `NodeResponse::Error`.
-    todo!()
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 {
+            break;
+        }
+        let response_line = match handle_line(&sender, &line).await {
+            Ok(encoded) => encoded,
+            Err(err) => encode_response(&NodeResponse::Error(err.to_string())),
+        };
+        writer.write_all(response_line.as_bytes()).await?;
+    }
+    Ok(())
 }
 
 /// Run a TCP server until the shutdown signal is received.
@@ -36,11 +43,17 @@ pub async fn run_tcp_server(
     sender: mpsc::Sender<NodeCommand>,
     mut shutdown: oneshot::Receiver<()>,
 ) -> Result<(), NodeError> {
-    // Steps:
-    // 1. Loop with `tokio::select!`.
-    // 2. Accept inbound connections from `listener`.
-    // 3. Spawn `handle_connection` for each connection.
-    // 4. Break the loop when `shutdown` resolves.
-    // 5. Return `Ok(())` after graceful shutdown.
-    todo!()
+    loop {
+        tokio::select! {
+            accept_result = listener.accept() => {
+                let (stream, _) = accept_result?;
+                let sender = sender.clone();
+                tokio::spawn(handle_connection(stream, sender));
+            }
+            _ = &mut shutdown => {
+                break;
+            }
+        }
+    }
+    Ok(())
 }
