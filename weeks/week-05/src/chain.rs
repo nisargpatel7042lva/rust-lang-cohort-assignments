@@ -9,127 +9,108 @@ pub struct Blockchain {
 }
 
 impl Blockchain {
-    /// Create an empty chain for the selected network.
     pub fn new(network: Network) -> Self {
-        // Steps:
-        // 1. Store `network`.
-        // 2. Start with an empty `Vec<Block>`.
-        // 3. Return the new `Blockchain`.
-        todo!()
+        Self {
+            network,
+            blocks: Vec::new(),
+        }
     }
 
-    /// Create a chain that starts with a validated genesis block.
     pub fn from_genesis(genesis: Block) -> Result<Self, BtcLibError> {
-        // Steps:
-        // 1. Validate the supplied block.
-        // 2. Validate its merkle root.
-        // 3. Create a chain with `genesis.network`.
-        // 4. Push the genesis block into the chain.
-        // 5. Return the chain.
-        todo!()
+        genesis.validate()?;
+        validate_merkle_root(&genesis)?;
+        let mut chain = Self::new(genesis.network);
+        chain.blocks.push(genesis);
+        Ok(chain)
     }
 
-    /// Return the current chain height.
-    ///
-    /// Empty chains return 0. Non-empty chains return the height of the tip block.
     pub fn height(&self) -> u64 {
-        // Steps:
-        // 1. Look at the tip block with `self.tip()`.
-        // 2. Return the tip height when present.
-        // 3. Return 0 for an empty chain.
-        todo!()
+        self.tip().map(|b| b.height).unwrap_or(0)
     }
 
-    /// Return the current tip block.
     pub fn tip(&self) -> Option<&Block> {
-        // Steps:
-        // 1. Return the last block in `self.blocks`.
-        todo!()
+        self.blocks.last()
     }
 
-    /// Return the current tip hash, if the chain has a tip.
     pub fn tip_hash(&self) -> Option<&str> {
-        // Steps:
-        // 1. Get the tip block.
-        // 2. Return `Some(tip.header.block_hash.as_str())`.
-        // 3. Return `None` for an empty chain.
-        todo!()
+        self.tip().map(|b| b.header.block_hash.as_str())
     }
 
-    /// Append a validated block to the chain.
     pub fn append_block(&mut self, block: Block) -> Result<(), BtcLibError> {
-        // Steps:
-        // 1. Validate the block and its merkle root.
-        // 2. If the chain is empty, require `block.height == 0`.
-        // 3. If the chain is not empty, require:
-        //    - `block.header.previous_block_hash` equals the current tip hash.
-        //    - `block.height` is exactly current tip height + 1.
-        // 4. Push the block and return `Ok(())`.
-        // 5. Use `InvalidPreviousHash` for bad linkage or height.
-        todo!()
+        block.validate()?;
+        validate_merkle_root(&block)?;
+        if self.blocks.is_empty() {
+            if block.height != 0 {
+                return Err(BtcLibError::InvalidPreviousHash);
+            }
+        } else {
+            let tip = self.tip().unwrap();
+            if block.header.previous_block_hash != tip.header.block_hash {
+                return Err(BtcLibError::InvalidPreviousHash);
+            }
+            if block.height != tip.height + 1 {
+                return Err(BtcLibError::InvalidPreviousHash);
+            }
+        }
+        self.blocks.push(block);
+        Ok(())
     }
 
-    /// Find a block by its header hash.
     pub fn find_block_by_hash(&self, block_hash: &str) -> Option<&Block> {
-        // Steps:
-        // 1. Iterate through `self.blocks`.
-        // 2. Return the first block whose `header.block_hash` matches.
-        // 3. Return `None` when no block matches.
-        todo!()
+        self.blocks
+            .iter()
+            .find(|b| b.header.block_hash == block_hash)
     }
 
-    /// Find a transaction anywhere in the chain.
     pub fn find_transaction(&self, txid: &str) -> Option<&Transaction> {
-        // Steps:
-        // 1. Iterate over blocks in order.
-        // 2. Reuse `block.find_transaction(txid)`.
-        // 3. Return the first matching transaction.
-        // 4. Return `None` if no block contains the transaction.
-        todo!()
+        self.blocks
+            .iter()
+            .find_map(|b| b.find_transaction(txid))
     }
 
-    /// Count all transactions across all blocks.
     pub fn total_transactions(&self) -> usize {
-        // Steps:
-        // 1. Iterate over every block.
-        // 2. Add each block's transaction count.
-        // 3. Return the total.
-        todo!()
+        self.blocks.iter().map(|b| b.transaction_count()).sum()
     }
 
-    /// Validate every block and every link in the chain.
     pub fn validate(&self) -> Result<(), BtcLibError> {
-        // Steps:
-        // 1. Reject an empty chain with `BtcLibError::EmptyChain`.
-        // 2. Validate each block and merkle root.
-        // 3. For every block after genesis, check previous hash and height.
-        // 4. Return the first error.
-        // 5. Return `Ok(())` when the whole chain is valid.
-        todo!()
+        if self.blocks.is_empty() {
+            return Err(BtcLibError::EmptyChain);
+        }
+        for (i, block) in self.blocks.iter().enumerate() {
+            block.validate()?;
+            validate_merkle_root(block)?;
+            if i > 0 {
+                let prev = &self.blocks[i - 1];
+                if block.header.previous_block_hash != prev.header.block_hash {
+                    return Err(BtcLibError::InvalidPreviousHash);
+                }
+                if block.height != prev.height + 1 {
+                    return Err(BtcLibError::InvalidPreviousHash);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 /// Return a lowercase label for the network.
 pub fn network_label(network: Network) -> &'static str {
-    // Steps:
-    // 1. Match every `Network` variant.
-    // 2. Return exactly: `mainnet`, `testnet`, `signet`, or `regtest`.
-    todo!()
+    match network {
+        Network::Mainnet => "mainnet",
+        Network::Testnet => "testnet",
+        Network::Signet => "signet",
+        Network::Regtest => "regtest",
+    }
 }
 
 /// Build a compact chain summary string.
-///
-/// Use exactly:
-/// `network:<network>|height:<height>|blocks:<count>|tip:<tip_hash>|txs:<total_transactions>`
-///
-/// For an empty chain, use `tip:none`.
 pub fn chain_summary(chain: &Blockchain) -> String {
-    // Steps:
-    // 1. Convert the network to a label with `network_label`.
-    // 2. Use `chain.height()` for height.
-    // 3. Use `chain.blocks.len()` for block count.
-    // 4. Use `chain.tip_hash().unwrap_or("none")` for the tip.
-    // 5. Use `chain.total_transactions()` for transaction count.
-    // 6. Return the exact format shown above.
-    todo!()
+    format!(
+        "network:{}|height:{}|blocks:{}|tip:{}|txs:{}",
+        network_label(chain.network),
+        chain.height(),
+        chain.blocks.len(),
+        chain.tip_hash().unwrap_or("none"),
+        chain.total_transactions()
+    )
 }
